@@ -17,7 +17,7 @@
 #
 
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Callable
 
 import numpy as np
 import pandas as pd
@@ -30,6 +30,12 @@ app = typer.Typer()
 
 class Algorithm(str, Enum):
     levenshtein = "levenshtein"
+    jacard = "jacard"
+
+def jacard_distance(status1: str, status2: str) -> float:
+    set1 = set(status1)
+    set2 = set(status2)
+    return len(set1.intersection(set2)) / len(set1.union(set2))
 
 
 def compute_distance_matrix(
@@ -44,8 +50,11 @@ def compute_distance_matrix(
     distance_matrix = np.zeros((n, n))
     labels = list(service_data.keys())
 
+    fun_algorithm: Callable[[str, str], float]
     if algorithm.value == "levenshtein":
         fun_algorithm = levenshtein_distance
+    elif algorithm.value == "jacard":
+        fun_algorithm = jacard_distance
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm.value}")
 
