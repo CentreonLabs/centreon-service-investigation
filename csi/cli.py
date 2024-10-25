@@ -29,8 +29,9 @@ app = typer.Typer()
 
 
 class Algorithm(str, Enum):
-    levenshtein = "levenshtein"
-    jacard = "jacard"
+    LEVENSHTEIN = "levenshtein"
+    JACARD = "jacard"
+
 
 def jacard_distance(status1: str, status2: str) -> float:
     set1 = set(status1)
@@ -127,7 +128,7 @@ def distance(
     algorithm: Annotated[
         Algorithm,
         typer.Option("--algorithm", "-a", help="Distance algorithm."),
-    ] = Algorithm.levenshtein,
+    ] = Algorithm.LEVENSHTEIN,
 ):
     """
     Compute pairwise distances for a given ID and return other IDs below a threshold,
@@ -167,7 +168,7 @@ def cluster(
     input: Annotated[str, typer.Argument(help="Input CSV file.")],
     algorithm: Annotated[
         Algorithm, typer.Option(help="Distance algorithm.")
-    ] = Algorithm.levenshtein,
+    ] = Algorithm.LEVENSHTEIN,
     compare_names: Annotated[
         bool,
         typer.Option(
