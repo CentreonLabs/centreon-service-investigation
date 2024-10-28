@@ -17,7 +17,7 @@
 #
 
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Callable
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,14 @@ app = typer.Typer()
 
 
 class Algorithm(str, Enum):
-    levenshtein = "levenshtein"
+    LEVENSHTEIN = "levenshtein"
+    JACARD = "jacard"
+
+
+def jacard_distance(status1: str, status2: str) -> float:
+    set1 = set(status1)
+    set2 = set(status2)
+    return len(set1.intersection(set2)) / len(set1.union(set2))
 
 
 def compute_distance_matrix(
@@ -44,60 +51,53 @@ def compute_distance_matrix(
     distance_matrix = np.zeros((n, n))
     labels = list(service_data.keys())
 
-    if algorithm.value == "levenshtein":
-        fun_algorithm = levenshtein_distance
-    else:
-        raise ValueError(f"Unsupported algorithm: {algorithm.value}")
+    fun_algorithm: Callable[[str, str], float]
+    match algorithm:
+        case Algorithm.LEVENSHTEIN:
+            fun_algorithm = levenshtein_distance
+        case Algorithm.JACARD:
+            fun_algorithm = jacard_distance
+        case _:
+            raise ValueError(f"Unsupported algorithm: {algorithm.value}")
 
-    for i, name1 in enumerate(labels):
-        for j, name2 in enumerate(labels):
-            status1 = service_data[name1]
-            status2 = service_data[name2]
-            dist = fun_algorithm(status1, status2)
-            distance_matrix[i, j] = dist
+    n = len(labels)
+    for i in range(n):
+        for j in range(i):
+            status_i = service_data[labels[i]]
+            status_j = service_data[labels[j]]
+            distance = fun_algorithm(status_i, status_j)
+            distance_matrix[i, j] = distance
+            distance_matrix[j, i] = distance
 
     if id is not None:
-        index_id = list(service_data.keys()).index(id)
-        distances = distance_matrix[index_id]
-        keys = sorted(labels, key=lambda x: distances[labels.index(x)])
-        distances = sorted(distances)
-        return dict(zip(keys, distances))
+        i = labels.index(id)
+        distances = {label: distance_matrix[i, j] for j, label in enumerate(labels)}
+        return dict(sorted(distances.items(), key=lambda item: item[1]))
 
     return distance_matrix
 
 
 def read_csv(input: str, min_element: int = 10) -> dict[str, str]:
-    df = pd.read_csv(input, names=["ctime", "id", "status"])
+    symbols = {"0": "O", "1": "W", "2": "C", "3": "U"}
+
+    # Load data in a df and replace status id with their symbol
+    df = pd.read_csv(
+        input,
+        names=["ctime", "id", "status"],
+        converters={"status": lambda status: symbols.get(status, "")},
+    )
+
     assert len(df) > 0, "Empty CSV file"
 
-    status_map = {
-        0: "O",  # OK
-        1: "W",  # WARNING
-        2: "C",  # CRITICAL
-        3: "U",  # UNKNOWN
-    }
+    # Join status symbols by service ordered by time
+    df = (
+        df.sort_values(by=["id", "ctime"])[["id", "status"]]
+        .groupby("id")
+        .agg({"status": lambda status: "".join(status)})
+        .query("status.str.len() >= @min_element")
+    )
 
-    service_data: dict[str, str] = {}
-    total_service = 0
-    for _, row in df.iterrows():
-        name = row["id"]
-        status = row["status"]
-        ctime = row["ctime"]
-        if name not in service_data:
-            service_data[name] = ""
-            total_service += 1
-        if status in status_map:
-            service_data[name] += status_map[status]
-        else:
-            print(
-                f"Warning: Unrecognized status code '{status}' for service '{name}' at time '{ctime}'"  # noqa E501
-            )
-
-    for name in list(service_data.keys()):
-        if len(service_data[name]) <= min_element or len(set(service_data[name])) == 1:
-            del service_data[name]
-            total_service -= 1
-    return service_data
+    return df.to_dict()["status"]
 
 
 @app.command()
@@ -118,7 +118,7 @@ def distance(
     algorithm: Annotated[
         Algorithm,
         typer.Option("--algorithm", "-a", help="Distance algorithm."),
-    ] = Algorithm.levenshtein,
+    ] = Algorithm.LEVENSHTEIN,
 ):
     """
     Compute pairwise distances for a given ID and return other IDs below a threshold,
@@ -130,13 +130,12 @@ def distance(
         typer.echo(e)
         raise typer.Exit(code=1)
 
-    if compare_names:
-        service_data = {k: k for k in service_data.keys()}
-
-    target_row = service_data.get(id)
-    if target_row is None:
+    if id not in service_data:
         typer.echo(f"ID {id} not found in the input file.")
         raise typer.Exit(code=1)
+
+    if compare_names:
+        service_data = {k: k for k in service_data.keys()}
 
     try:
         result_ids = compute_distance_matrix(service_data, algorithm, id)
@@ -158,7 +157,7 @@ def cluster(
     input: Annotated[str, typer.Argument(help="Input CSV file.")],
     algorithm: Annotated[
         Algorithm, typer.Option(help="Distance algorithm.")
-    ] = Algorithm.levenshtein,
+    ] = Algorithm.LEVENSHTEIN,
     compare_names: Annotated[
         bool,
         typer.Option(
