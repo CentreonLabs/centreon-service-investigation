@@ -130,13 +130,12 @@ def distance(
         typer.echo(e)
         raise typer.Exit(code=1)
 
-    if compare_names:
-        service_data = {k: k for k in service_data.keys()}
-
-    target_row = service_data.get(id)
-    if target_row is None:
+    if id not in service_data:
         typer.echo(f"ID {id} not found in the input file.")
         raise typer.Exit(code=1)
+
+    if compare_names:
+        service_data = {k: k for k in service_data.keys()}
 
     try:
         result_ids = compute_distance_matrix(service_data, algorithm, id)
