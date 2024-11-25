@@ -22,7 +22,10 @@ sudo dnf install pipx && pipx ensurepath
 brew install pipx
 
 # On Windows
-# You're on your own ;)
+# Have python
+py -m pip install --user pipx
+py -m pipx ensurepath
+# restart terminal
 ```
 
 Then, you can install the tool with the following command:
